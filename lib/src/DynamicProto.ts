@@ -53,6 +53,13 @@ const DynProxyTag = '_isDynProxy';
  * @ignore
  */ 
 const DynClassName = '_dynClass';
+
+/**
+ * Name used to cache base prototype function sources on the class prototype to avoid
+ * re-walking the prototype chain on every instance creation.
+ * @ignore
+ */
+const DynBaseProtoFuncs = '_dynBaseFuncs';
  
 /**
  * Prefix added to the classname to avoid any name clashes with other instance level properties
@@ -268,6 +275,38 @@ function _hasVisited(values:any[], value:any) {
 }
 
 /**
+ * Caches and returns a mapping of base prototype function names to their source prototype objects.
+ * This avoids re-walking the prototype chain on every instance creation, reducing construction
+ * cost from O(M*D) to O(M) for subsequent instances (M = methods, D = depth).
+ * @param classProto The current class prototype to look up base functions for
+ * @ignore
+ */
+function _getBaseProtoFuncs(classProto: any): any {
+    if (objHasOwnProperty(classProto, DynBaseProtoFuncs)) {
+        return classProto[DynBaseProtoFuncs];
+    }
+
+    let baseFuncSources = objCreate(null);
+    let baseProto = _getObjProto(classProto);
+    let visited: any[] = [];
+
+    // Walk the entire prototype chain once and record which proto owns each function
+    while (baseProto && !_isObjectArrayOrFunctionPrototype(baseProto) && !_hasVisited(visited, baseProto)) {
+        _forEachProp(baseProto, (name) => {
+            if (!baseFuncSources[name] && _isDynamicCandidate(baseProto, name, !_objGetPrototypeOf)) {
+                baseFuncSources[name] = baseProto;
+            }
+        });
+
+        visited.push(baseProto);
+        baseProto = _getObjProto(baseProto);
+    }
+
+    classProto[DynBaseProtoFuncs] = baseFuncSources;
+    return baseFuncSources;
+}
+
+/**
  * Returns an object that contains callback functions for all "base/super" functions, this is used to "save"
  * enabling calling super.xxx() functions without requiring that the base "class" has defined a prototype references
  * @param target The current instance
@@ -297,29 +336,13 @@ function _getBaseFuncs(classProto:any, thisTarget:any, instFuncs:any, useBaseIns
         baseFuncs[name] = _instFuncProxy(thisTarget, instFuncs, name);
     });
     
-    // Get the base prototype functions
-    let baseProto = _getObjProto(classProto);
-    let visited:any[] = [];
-
-    // Don't include base object functions for Object, Array or Function
-    while (baseProto && !_isObjectArrayOrFunctionPrototype(baseProto) && !_hasVisited(visited, baseProto)) {
-        // look for prototype functions
-        _forEachProp(baseProto, (name) => {
-            // Don't include any dynamic prototype instances - as we only want the real functions
-            // For IE 7/8 the prototype lookup doesn't provide the full chain so we need to bypass the 
-            // hasOwnProperty check we get all of the methods, main difference is that IE7/8 doesn't return
-            // the Object prototype methods while bypassing the check
-            if (!baseFuncs[name] && _isDynamicCandidate(baseProto, name, !_objGetPrototypeOf)) {
-                // Create an instance callback for passing the base function to the caller
-                baseFuncs[name] = _instFuncProxy(thisTarget, baseProto, name);
-            }
-        });
-
-        // We need to find all possible functions that might be overloaded by walking the entire prototype chain
-        // This avoids the caller from needing to check whether it's direct base class implements the function or not
-        // by walking the entire chain it simplifies the usage and issues from upgrading any of the base classes.
-        visited.push(baseProto);
-        baseProto = _getObjProto(baseProto);
+    // Use cached prototype chain function sources to avoid O(M*D) walk per instance
+    let baseFuncSources = _getBaseProtoFuncs(classProto);
+    for (let name in baseFuncSources) {
+        if (!baseFuncs[name]) {
+            // Create an instance callback for passing the base function to the caller
+            baseFuncs[name] = _instFuncProxy(thisTarget, baseFuncSources[name], name);
+        }
     }
 
     return baseFuncs;
