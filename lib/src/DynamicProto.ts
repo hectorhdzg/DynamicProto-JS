@@ -78,6 +78,12 @@ const DynInstChkTag = '_dynInstChk';
  * tag name as the function level but a different const name for readability only.
  */
 const DynAllowInstChkTag = DynInstChkTag;
+
+/**
+ * Prefix used for per-instance resolved function cache keys stored in the instFuncTable
+ * @ignore
+ */
+const DynResolvedCachePrefix = '_dyn_r$';
  
 /**
  * The global (imported) instances where the global performance options are stored
@@ -369,22 +375,25 @@ function _getInstFunc(target: any, funcName: string, proto: any, currentDynProto
             // If the instance already has an instance function we can't replace it
             let canAddInst = !objHasOwnProperty(target, funcName);
 
-            // Get current prototype
-            let objProto = _getObjProto(target);
-            let visited:any[] = [];
+            // Only perform the prototype chain walk if canAddInst is still viable
+            if (canAddInst) {
+                // Get current prototype
+                let objProto = _getObjProto(target);
+                let visited:any[] = [];
 
-            // Lookup the function starting at the top (instance level prototype) and traverse down, if the first matching function
-            // if nothing is found or if the first hit is a dynamic proto instance then we can safely add an instance shortcut
-            while (canAddInst && objProto && !_isObjectArrayOrFunctionPrototype(objProto) && !_hasVisited(visited, objProto)) {
-                let protoFunc = objProto[funcName];
-                if (protoFunc) {
-                    canAddInst = (protoFunc === currentDynProtoProxy);
-                    break;
+                // Lookup the function starting at the top (instance level prototype) and traverse down, if the first matching function
+                // if nothing is found or if the first hit is a dynamic proto instance then we can safely add an instance shortcut
+                while (objProto && !_isObjectArrayOrFunctionPrototype(objProto) && !_hasVisited(visited, objProto)) {
+                    let protoFunc = objProto[funcName];
+                    if (protoFunc) {
+                        canAddInst = (protoFunc === currentDynProtoProxy);
+                        break;
+                    }
+
+                    // We need to find all possible initial functions to ensure that we don't bypass a valid override function
+                    visited.push(objProto);
+                    objProto = _getObjProto(objProto);
                 }
-
-                // We need to find all possible initial functions to ensure that we don't bypass a valid override function
-                visited.push(objProto);
-                objProto = _getObjProto(objProto);
             }
 
             try {
@@ -434,9 +443,25 @@ function _getProtoFunc(funcName: string, proto: any, currentDynProtoProxy: any) 
  */
 function _populatePrototype(proto:any, className:string, target:any, baseInstFuncs:any, setInstanceFunc:boolean) {
     function _createDynamicPrototype(proto:any, funcName:string) {
+        // Pre-compute a cache key for storing the resolved instance function directly in the
+        // instFuncTable (which is per-instance and NOT frozen even when the instance is).
+        // This avoids repeated _getInstFunc lookups when the shortcut optimization cannot be applied.
+        let cacheKey = DynResolvedCachePrefix + className + "." + funcName;
+
         let dynProtoProxy = function() {
-            // Use the instance or prototype function
-            let instFunc = _getInstFunc(this, funcName, proto, dynProtoProxy) || _getProtoFunc(funcName, proto, dynProtoProxy);
+            // Fast path: check the per-instance resolved cache to avoid _getInstFunc overhead on repeated calls
+            let instFuncTable = this[DynInstFuncTable];
+            let instFunc = instFuncTable ? instFuncTable[cacheKey] : undefined;
+            if (!instFunc) {
+                // Use the instance or prototype function
+                instFunc = _getInstFunc(this, funcName, proto, dynProtoProxy) || _getProtoFunc(funcName, proto, dynProtoProxy);
+                // Cache the resolved function for subsequent calls from this instance.
+                // instFuncTable is created with objCreate(null) during construction and is not frozen
+                // even when the instance itself is frozen (Object.freeze is shallow).
+                if (instFuncTable) {
+                    instFuncTable[cacheKey] = instFunc;
+                }
+            }
             // eslint-disable-next-line prefer-rest-params
             return instFunc.apply(this, arguments);
         };
@@ -464,6 +489,10 @@ function _populatePrototype(proto:any, className:string, target:any, baseInstFun
                         // Save the instance Function to the lookup table and remove it from the instance as it's not a dynamic proto function
                         instFuncs[name] = target[name];
                         delete target[name];
+
+                        // Invalidate any cached resolved function for this entry so stale
+                        // values are not returned after re-registration via dynamicProto
+                        delete instFuncTable[DynResolvedCachePrefix + className + "." + name];
                         
                         // Add a dynamic proto if one doesn't exist or if a prototype function exists and it's not a dynamic one
                         if (!objHasOwnProperty(proto, name) || (proto[name] && !proto[name][DynProxyTag])) {
