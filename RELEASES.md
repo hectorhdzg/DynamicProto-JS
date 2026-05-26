@@ -1,5 +1,29 @@
 # Releases
 
+## 2.0.4 (TBD)
+
+### Changes
+
+- #109 Cache prototype chain walk to reduce construction cost
+- #108 Cache deep hierarchy method resolution
+- #107 Fix vulnerable dependencies and update Node.js CI matrix
+- #106 Update dependencies
+- #105 Update to npm 9.9.4
+- #104 Update version of @microsoft/rush
+- #103 Fix additional tests to only use local resources
+- #102 Fix tests to only use local resources
+- #101 Update build dependencies
+- #100 Fix vulnerable dependencies
+- #99 Fix docs generation and update shrinkwrap
+- #98 Remove unused jQuery files from repository
+- #94 Update components to address governance issues
+- #93 Fix code scanning alert: unused variable, import, function or class
+- #92 Remove leading blank line from rush.json config
+- #91 Update rush version
+- #88 Add packaging helper script
+- Remove Rush monorepo tooling and update build instructions
+- Update `@nevware21/ts-utils` minimum version to >= 0.14.0 to address prototype pollution (GHSA-x7j8-49r8-mr43)
+
 ## 2.0.3 (Jan 11th, 2024)
 
 Blocks a medium level prototype pollution vulnerability.
