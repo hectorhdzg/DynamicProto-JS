@@ -1,6 +1,6 @@
 # Releases
 
-## 2.0.4 (May 26th, 2026)
+## 2.0.4 (TBD)
 
 ### Security
 
