@@ -2,18 +2,11 @@
 
 ## 2.0.4 (TBD)
 
-### Security
-
-- Fix high severity Prototype Pollution vulnerability in `@nevware21/ts-utils` by updating minimum version to >= 0.14.0 (GHSA-x7j8-49r8-mr43)
-- #107 Fix vulnerable dependencies and update Node.js CI matrix
-
-### Performance
-
-- #108 Cache deep hierarchy method resolution for improved performance
-- #109 Cache prototype chain walk to reduce construction from O(M*D) to O(M)
-
 ### Changes
 
+- #109 Cache prototype chain walk to reduce construction cost
+- #108 Cache deep hierarchy method resolution
+- #107 Fix vulnerable dependencies and update Node.js CI matrix
 - #106 Update dependencies
 - #105 Update to npm 9.9.4
 - #104 Update version of @microsoft/rush
@@ -28,7 +21,8 @@
 - #92 Remove leading blank line from rush.json config
 - #91 Update rush version
 - #88 Add packaging helper script
-- Remove Rush monorepo tooling, update build instructions
+- Remove Rush monorepo tooling and update build instructions
+- Update `@nevware21/ts-utils` minimum version to >= 0.14.0 to address prototype pollution (GHSA-x7j8-49r8-mr43)
 
 ## 2.0.3 (Jan 11th, 2024)
 
